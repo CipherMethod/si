@@ -1,0 +1,74 @@
+#!/bin/sh
+# System Information - Quick system info with processes using >= 1% CPU
+# Created: 07 April 2000
+#      by: Jamey Hopkins
+#
+# 23Jul2002 jah - send error on uptime and ps to /dev/null to handle
+#                 output of unknown HZ value kernel bug 
+# 28Jul2004 jah - added CPU information / format change
+# 26Apr2013 jah - added SunOS support
+# 21May2013 jah - report distro (beta)(redhat mint oracle)
+# 30Nov2017 jah - fill DISTRO with fedora-release info (ie fedora 27)
+
+OS=`uname`
+
+echo
+echo [ `uname -n` ]
+date
+if [ "$OS" = "Linux" ]
+then
+   DISTRO=`grep DISTRIB_DESCRIPTION /etc/lsb-release 2>/dev/null | cut -f2 -d=`
+   RH=`cat /proc/version 2>/dev/null | grep redhat.com`
+   [ "$RH" ] && DISTRO=`cat /etc/redhat-release`
+   OR=`cat /proc/version 2>/dev/null | grep oracle`
+   [ "$OR" ] && DISTRO="(Oracle) `cat /etc/enterprise-release`"
+   [ "$DISTRO" = "" ] && DISTRO=`cat /etc/fedora-release`
+   [ "$DISTRO" = "" ] && DISTRO="Unknown Distro"
+   echo $DISTRO
+
+   CPU=`cat /proc/cpuinfo | grep "model name" | tail -1 | awk -F: '{ print $2 }' | xargs echo`
+   NCPU=`cat /proc/cpuinfo | grep "processor" | wc -l | xargs echo`
+   MHZ=`cat /proc/cpuinfo | grep "MHz" | tail -1 | awk -F: '{ print $2 }' | xargs echo`
+   printf "%s on %s %s (%s MHz)\n" "$OS" "$NCPU" "$CPU" "$MHZ"
+fi
+
+if [ "$OS" = "SunOS" ]
+then
+   CPU=`/usr/sbin/psrinfo -v | grep "processor operates" | head -1 | awk '{ print $2 }'`
+   NCPU=`/usr/sbin/psrinfo -v | grep Status | wc -l | xargs echo`
+   REL=`uname -X | grep Release | cut -f3 -d' '`
+   MHZ=`/usr/sbin/psrinfo -v | grep "operates at" | head -1 | awk '{ print $6" "$7 }' | sed 's/,//g'`
+   printf "%s %s on %s %s (%s)\n" "$OS" "$REL" "$NCPU" "$CPU" "$MHZ"
+fi
+
+STATS=`uptime 2>/dev/null`
+echo $STATS
+
+echo
+echo "Active Processes Using >= 1% of CPU:"
+echo _________________________________________________________
+
+if [ "$OS" = "Linux" -o "$OS" = "SunOS" ]
+then
+	ps -e -o user -o pid -o c -o args 2>/dev/null | grep -v ' 0 '
+elif [ "$OS" = "SCO_SV" ]
+then
+	ps -A -o user -o pid -o c -o args 2>/dev/null | grep -v ' 0 ' | grep -v $$ > /tmp/ps.tmp
+	echo "UID\\t\\tPID\\tC\\tCMD"
+	while read data
+	do
+		set $data
+		if [ $3 -gt 4 ]
+		then
+			echo -n $1\\t 
+			if [ `expr length $1` -lt 8 ]
+				then echo -n \\t
+			fi
+			echo $2\\t$3\\t$4' '$5
+		fi
+	done < /tmp/ps.tmp
+fi
+echo _________________________________________________________
+rm /tmp/si.tmp /tmp/usr.tmp /tmp/ps.tmp >/dev/null 2>&1
+echo
+
